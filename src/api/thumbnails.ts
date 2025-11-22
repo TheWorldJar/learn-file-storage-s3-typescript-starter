@@ -4,16 +4,14 @@ import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
-import { cfg } from "../config";
-import path from "path";
-import { isUndefined } from "util";
+import mime from "mime-types";
 
-type Thumbnail = {
+/*type Thumbnail = {
   data: ArrayBuffer;
   mediaType: string;
 };
 
-const videoThumbnails: Map<string, Thumbnail> = new Map();
+const videoThumbnails: Map<string, Thumbnail> = new Map();*/
 
 export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -26,14 +24,18 @@ export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new NotFoundError("Couldn't find video");
   }
 
-  const thumbnail = videoThumbnails.get(videoId);
-  if (!thumbnail) {
+  const thumbnailURL = video.thumbnailURL;
+  if (!thumbnailURL) {
     throw new NotFoundError("Thumbnail not found");
   }
 
-  return new Response(thumbnail.data, {
+  const file = Bun.file(thumbnailURL);
+  const thumbnailData = await file.arrayBuffer();
+  const thumbnailType = file.type;
+
+  return new Response(thumbnailData, {
     headers: {
-      "Content-Type": thumbnail.mediaType,
+      "Content-Type": thumbnailType,
       "Cache-Control": "no-store",
     },
   });
@@ -47,6 +49,14 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   const token = getBearerToken(req.headers);
   const userID = validateJWT(token, cfg.jwtSecret);
+
+  const video = getVideo(cfg.db, videoId);
+  if (!video) {
+    throw new NotFoundError("Video Not Found");
+  }
+  if (video.userID !== userID) {
+    throw new UserForbiddenError("Forebidden");
+  }
 
   console.log("uploading thumbnail for video", videoId, "by user", userID);
 
@@ -66,15 +76,12 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Invalid File Type");
   }
   Bun.write(
-    path.join(cfg.assetsRoot, videoId, fileType),
+    `${cfg.assetsRoot}/${videoId}.${mime.extension(fileType)}`,
     await thumbnail.arrayBuffer(),
   );
 
-  const thumbURL = `http://localhost:${cfg.port}/assets/${videoId}.${fileType}`;
-  const video = getVideo(cfg.db, videoId);
-  if (!isUndefined(video)) {
-    video.thumbnailURL = thumbURL;
-    updateVideo(cfg.db, video);
-  }
+  const thumbURL = `http://localhost:${cfg.port}/assets/${videoId}.${mime.extension(fileType)}`;
+  video.thumbnailURL = thumbURL;
+  updateVideo(cfg.db, video);
   return respondWithJSON(200, video);
 }
