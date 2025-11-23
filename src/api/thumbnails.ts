@@ -5,6 +5,7 @@ import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 import mime from "mime-types";
+import { randomBytes } from "crypto";
 
 /*type Thumbnail = {
   data: ArrayBuffer;
@@ -75,12 +76,14 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   if (fileType !== "image/jpeg" && fileType !== "image/png") {
     throw new BadRequestError("Invalid File Type");
   }
+  const fileName = randomBytes(32).toString("base64url");
+
   Bun.write(
-    `${cfg.assetsRoot}/${videoId}.${mime.extension(fileType)}`,
+    `${cfg.assetsRoot}/${fileName}.${mime.extension(fileType)}`,
     await thumbnail.arrayBuffer(),
   );
 
-  const thumbURL = `http://localhost:${cfg.port}/assets/${videoId}.${mime.extension(fileType)}`;
+  const thumbURL = `http://localhost:${cfg.port}/assets/${fileName}.${mime.extension(fileType)}`;
   video.thumbnailURL = thumbURL;
   updateVideo(cfg.db, video);
   return respondWithJSON(200, video);
